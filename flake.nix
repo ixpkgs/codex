@@ -1,16 +1,10 @@
 {
   description = "Versioned Nix package for the OpenAI Codex CLI";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { nixpkgs, rust-overlay, ... }:
+    { nixpkgs, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -24,64 +18,77 @@
       packages = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
+          pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-          tag = "rust-v0.3.0";
-          version = "rust-v0.3.0";
-          commit = "de04ab108de52f630ed78e5709fc166d0cb09752";
+          tag = "rust-v0.4.0";
+          version = "rust-v0.4.0";
+          commit = "345e8bece0aaa9570242d676b6588646a217c892";
           src = builtins.fetchGit {
             url = "https://github.com/openai/codex";
             rev = commit;
           };
-          rust = pkgs.rust-bin.stable.latest.minimal;
-          rustPlatform = pkgs.makeRustPlatform {
-            cargo = rust;
-            rustc = rust;
+          targets = {
+            x86_64-linux = "x86_64-unknown-linux-musl";
+            aarch64-linux = "aarch64-unknown-linux-musl";
+            x86_64-darwin = "x86_64-apple-darwin";
+            aarch64-darwin = "aarch64-apple-darwin";
+          };
+          assetHashes = {
+            x86_64-linux = "sha256-LIRPBPfjO/161Ua9KvToIvzZY6mrHRBQJ3J/rsbm/NI=";
+            aarch64-linux = "sha256-QqN1HX+OQtW/NBS2SmqVhTxozjynVrdkCRe1teFaRQE=";
+            x86_64-darwin = "sha256-5vnhK0l/32Ulb74jelJ2bsichwfbvkaufFEbzt/Hlxg=";
+            aarch64-darwin = "sha256-F+EVt5q+YBY/eIrwJwR4ln17o8fy5xw7Z4lUhosTsxU=";
+          };
+          target = targets.${system};
+          upstreamVersion = lib.removePrefix "rust-v" version;
+          isBundle = lib.versionAtLeast upstreamVersion "0.140.0";
+          assetName =
+            if isBundle then "codex-package-${target}.tar.gz" else "codex-${target}.tar.gz";
+          releaseArchive = pkgs.fetchurl {
+            url = "https://github.com/openai/codex/releases/download/${tag}/${assetName}";
+            hash = assetHashes.${system};
           };
         in
         {
-          default = rustPlatform.buildRustPackage {
+          default = pkgs.stdenvNoCC.mkDerivation {
             pname = "codex";
             inherit version src;
+            inherit releaseArchive;
 
-            sourceRoot = "source/codex-rs";
-            cargoHash = "sha256-DIDAk5ibwEQ9mwOUS2JNFEA2npVK9TBph/TuwiJgfL4=";
-            cargoBuildFlags = [
-              "--package"
-              "codex-cli"
-            ];
-            doCheck = false;
+            dontUnpack = true;
+            nativeBuildInputs = [ pkgs.makeWrapper ];
 
-            nativeBuildInputs = with pkgs; [
-              clang
-              cmake
-              makeWrapper
-              pkg-config
-            ];
-            buildInputs = with pkgs; [
-              libclang
-              openssl
-            ] ++ lib.optionals stdenv.hostPlatform.isLinux [ libcap ];
+            installPhase = ''
+              runHook preInstall
 
-            env = {
-              LIBCLANG_PATH = "${lib.getLib pkgs.libclang}/lib";
-              NIX_CFLAGS_COMPILE = lib.optionalString pkgs.stdenv.cc.isGNU (
-                "-std=gnu17 -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
-              );
-              CARGO_PROFILE_RELEASE_LTO = "false";
-              CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16";
-            };
+              release_dir="$TMPDIR/codex-release"
+              mkdir -p "$release_dir" "$out/bin" "$out/libexec/codex"
+              tar -xzf "$releaseArchive" -C "$release_dir"
 
-            postFixup = ''
-              wrapProgram "$out/bin/codex" --prefix PATH : ${
-                lib.makeBinPath (
-                  [ pkgs.ripgrep ]
-                  ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.bubblewrap ]
-                )
-              }
+              if [ -x "$release_dir/bin/codex" ]; then
+                cp -R "$release_dir"/. "$out/libexec/codex/"
+                real_codex="$out/libexec/codex/bin/codex"
+                bundled_path="$out/libexec/codex/codex-path"
+              else
+                install -Dm755 "$release_dir/codex-${target}" "$out/libexec/codex/codex"
+                real_codex="$out/libexec/codex/codex"
+                bundled_path=""
+              fi
+
+              makeWrapper "$real_codex" "$out/bin/codex" \
+                --prefix PATH : "$bundled_path:${
+                  lib.makeBinPath (
+                    [ pkgs.ripgrep ]
+                    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.bubblewrap ]
+                  )
+                }"
+
+              runHook postInstall
+            '';
+
+            doInstallCheck = true;
+            installCheckPhase = ''
+              "$out/bin/codex" --version | grep -F "${upstreamVersion}"
             '';
 
             meta = {
