@@ -20,23 +20,26 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-          tag = "rust-v0.53.0";
-          version = "rust-v0.53.0";
-          commit = "ca80bc4902b7ca49112907152e8ed0879eaa0b78";
+          tag = "rust-v0.54.0";
+          version = "rust-v0.54.0";
+          commit = "2b816973c9de54bf0fff79f6382c2195d5f4226b";
+          upstreamVersion = lib.removePrefix "rust-v" version;
+          useGnuLinux =
+            lib.versionAtLeast upstreamVersion "0.54.0"
+            && lib.versionOlder upstreamVersion "0.140.0";
           targets = {
-            x86_64-linux = "x86_64-unknown-linux-musl";
-            aarch64-linux = "aarch64-unknown-linux-musl";
+            x86_64-linux = "x86_64-unknown-linux-${if useGnuLinux then "gnu" else "musl"}";
+            aarch64-linux = "aarch64-unknown-linux-${if useGnuLinux then "gnu" else "musl"}";
             x86_64-darwin = "x86_64-apple-darwin";
             aarch64-darwin = "aarch64-apple-darwin";
           };
           assetHashes = {
-            x86_64-linux = "sha256-VRYKwwdvjAysgBWsShcl5DaMFc3KsenZfSfBN1fU/6c=";
-            aarch64-linux = "sha256-qKHby9pLmh+J58PvtpGXFZtMgdK7rHLKYESeDW5xXp8=";
-            x86_64-darwin = "sha256-ZRVxHKMSQzpcsaXKg1F1FVWORqog8CwwuSmWT51VLts=";
-            aarch64-darwin = "sha256-l8cOKR+PHrwvBgIWKQr5fguJFUAKeYBfut7BIoemfLY=";
+            x86_64-linux = "sha256-Nxl8FI9LFDY2OlIUWAMK9/E092Kwop4E6X0iNCxD8O4=";
+            aarch64-linux = "sha256-fB0kI316vRotWj7W6PRgP+Y8L5mAyJE0eAO64BzThlE=";
+            x86_64-darwin = "sha256-LS309rlENgoCwQ1t4sTFqkwUyi09sg0XBkNPj089S1M=";
+            aarch64-darwin = "sha256-Ma774iXCvz0c3Q6+mYZSC5ND/XiBtOWCP75RTFwk9dQ=";
           };
           target = targets.${system};
-          upstreamVersion = lib.removePrefix "rust-v" version;
           isBundle = lib.versionAtLeast upstreamVersion "0.140.0";
           assetName =
             if isBundle then "codex-package-${target}.tar.gz" else "codex-${target}.tar.gz";
@@ -54,7 +57,14 @@
             passthru.upstreamCommit = commit;
 
             dontUnpack = true;
-            nativeBuildInputs = [ pkgs.makeWrapper ];
+            nativeBuildInputs = [ pkgs.makeWrapper ]
+              ++ lib.optionals (pkgs.stdenv.hostPlatform.isLinux && useGnuLinux) [
+                pkgs.autoPatchelfHook
+            ];
+            buildInputs = lib.optionals (pkgs.stdenv.hostPlatform.isLinux && useGnuLinux) [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib
+            ];
 
             installPhase = ''
               runHook preInstall
