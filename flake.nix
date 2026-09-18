@@ -20,9 +20,9 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-          tag = "rust-v0.144.1";
-          version = "rust-v0.144.1";
-          commit = "44918ea10c0f99151c6710411b4322c2f5c96bea";
+          tag = "rust-v0.144.2";
+          version = "rust-v0.144.2";
+          commit = "a6645b6b8a656360fa16fb7e1c6721d0697d3d6a";
           upstreamVersion = lib.removePrefix "rust-v" version;
           useGnuLinux =
             lib.versionAtLeast upstreamVersion "0.54.0"
@@ -34,10 +34,10 @@
             aarch64-darwin = "aarch64-apple-darwin";
           };
           assetHashes = {
-            x86_64-linux = "sha256-P9UM+WgJse6ilLv7oKXDpXaHG0h2ofDpEiblIMGSO+E=";
-            aarch64-linux = "sha256-IYq0i92pjd4+EN8YTMDE65LENy2cqSTvGqX8gbT2o44=";
-            x86_64-darwin = "sha256-HHl4gJd1SbKB7rTs2dvRRVQsTOJiooNeooR/GZIu0ww=";
-            aarch64-darwin = "sha256-MmGYgp37S2jaWXI89gVHii6b7In/R/62RYFKTF6vX2w=";
+            x86_64-linux = "sha256-JXz5/mWgesN/joQvL6VChB9ZoM9peEPLRWrdt2zhJIE=";
+            aarch64-linux = "sha256-x/dhalnfKxv2D3l2iXMoXRfOxXPr81yNVG1bcoX+mR8=";
+            x86_64-darwin = "sha256-I3z6v6SuQTOlVWlp3Lo3YI7T9KvhznaqH5rGHI2vTOc=";
+            aarch64-darwin = "sha256-NGN0msHDdvexCyQFlc2b4teclTOVz2j/Sx2bpCH9gUg=";
           };
           target = targets.${system};
           isBundle = lib.versionAtLeast upstreamVersion "0.140.0";
