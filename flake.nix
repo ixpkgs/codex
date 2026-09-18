@@ -29,14 +29,12 @@
             overlays = [ rust-overlay.overlays.default ];
           };
           lib = pkgs.lib;
-          tag = "rust-v0.2.0";
-          version = "rust-v0.2.0";
-          commit = "b3bffa594d67dce8fd916dc74b8daea7a2c6f9f3";
-          src = pkgs.fetchFromGitHub {
-            owner = "openai";
-            repo = "codex";
+          tag = "rust-v0.3.0";
+          version = "rust-v0.3.0";
+          commit = "de04ab108de52f630ed78e5709fc166d0cb09752";
+          src = builtins.fetchGit {
+            url = "https://github.com/openai/codex";
             rev = commit;
-            hash = "sha256-lpZsECLWmoGJYafL3FlmR6WwOcynGgqWq6IUB+/y6lY=";
           };
           rust = pkgs.rust-bin.stable.latest.minimal;
           rustPlatform = pkgs.makeRustPlatform {
@@ -49,7 +47,7 @@
             pname = "codex";
             inherit version src;
 
-            sourceRoot = "${src.name}/codex-rs";
+            sourceRoot = "source/codex-rs";
             cargoHash = "sha256-DIDAk5ibwEQ9mwOUS2JNFEA2npVK9TBph/TuwiJgfL4=";
             cargoBuildFlags = [
               "--package"
@@ -73,6 +71,8 @@
               NIX_CFLAGS_COMPILE = lib.optionalString pkgs.stdenv.cc.isGNU (
                 "-std=gnu17 -Wno-error=incompatible-pointer-types -Wno-error=implicit-function-declaration"
               );
+              CARGO_PROFILE_RELEASE_LTO = "false";
+              CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16";
             };
 
             postFixup = ''
