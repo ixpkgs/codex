@@ -20,13 +20,9 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-          tag = "rust-v0.4.0";
-          version = "rust-v0.4.0";
-          commit = "345e8bece0aaa9570242d676b6588646a217c892";
-          src = builtins.fetchGit {
-            url = "https://github.com/openai/codex";
-            rev = commit;
-          };
+          tag = "rust-v0.5.0";
+          version = "rust-v0.5.0";
+          commit = "6ff62ba8cecec3456e64e1780d59337eb12fcbcf";
           targets = {
             x86_64-linux = "x86_64-unknown-linux-musl";
             aarch64-linux = "aarch64-unknown-linux-musl";
@@ -34,10 +30,10 @@
             aarch64-darwin = "aarch64-apple-darwin";
           };
           assetHashes = {
-            x86_64-linux = "sha256-LIRPBPfjO/161Ua9KvToIvzZY6mrHRBQJ3J/rsbm/NI=";
-            aarch64-linux = "sha256-QqN1HX+OQtW/NBS2SmqVhTxozjynVrdkCRe1teFaRQE=";
-            x86_64-darwin = "sha256-5vnhK0l/32Ulb74jelJ2bsichwfbvkaufFEbzt/Hlxg=";
-            aarch64-darwin = "sha256-F+EVt5q+YBY/eIrwJwR4ln17o8fy5xw7Z4lUhosTsxU=";
+            x86_64-linux = "sha256-eJGRxvwwIxjH89B1fIKjj0oJnd3mzm/u2njLRlQpuIo=";
+            aarch64-linux = "sha256-5U9h+kKlfntQmSMUVMmAjMOSavqTinrEuLNgNNxRk20=";
+            x86_64-darwin = "sha256-YTfoxfMnAmBYBa4lXcp+5B7vrnvqqdFLXUJss3P+Ol0=";
+            aarch64-darwin = "sha256-Ac3deN4nX0XcmEWuxGGI+9lPHW96RLpS6EDQW8YJs3s=";
           };
           target = targets.${system};
           upstreamVersion = lib.removePrefix "rust-v" version;
@@ -52,8 +48,10 @@
         {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "codex";
-            inherit version src;
+            inherit version;
             inherit releaseArchive;
+
+            passthru.upstreamCommit = commit;
 
             dontUnpack = true;
             nativeBuildInputs = [ pkgs.makeWrapper ];
