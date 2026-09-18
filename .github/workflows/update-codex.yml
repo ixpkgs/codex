@@ -1,0 +1,199 @@
+name: Update Codex
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+      timezone: "Asia/Tokyo"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-codex
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    permissions:
+      contents: read
+    uses: ixpkgs/auto-update-workflows/.github/workflows/discover-upstream.yml@672dfaafb809e2f16b2ed67f30755a3723178447
+    with:
+      discovery_mode: releases
+      upstream_repository: https://github.com/openai/codex.git
+      upstream_github_repository: openai/codex
+      include_prereleases: false
+      tag_pattern: '^rust-v[0-9]+\.[0-9]+\.[0-9]+$'
+
+  update:
+    needs: discover
+    if: needs.discover.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    env:
+      BUILD_TARGET: .#default
+      CANDIDATES_JSON: ${{ needs.discover.outputs.candidates_json }}
+      FLAKE_FILE: flake.nix
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Package new Codex releases
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          if [[ ! -f "$FLAKE_FILE" ]] ||
+            ! git ls-files --error-unmatch -- "$FLAKE_FILE" >/dev/null 2>&1
+          then
+            echo "FLAKE_FILE must identify a tracked regular file: $FLAKE_FILE" >&2
+            exit 1
+          fi
+
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "The checkout must be clean before packaging updates." >&2
+            git status --short >&2
+            exit 1
+          fi
+
+          expect_one_assignment() {
+            local label="$1"
+            local pattern="$2"
+            local count
+            count=$(grep -Ec "$pattern" -- "$FLAKE_FILE" || true)
+            if (( count != 1 )); then
+              echo "Expected one $label assignment in $FLAKE_FILE; found $count." >&2
+              exit 1
+            fi
+          }
+
+          expect_one_assignment tag \
+            '^[[:space:]]*tag = "[^"]+";$'
+          expect_one_assignment version \
+            '^[[:space:]]*version = "[^"]+";$'
+          expect_one_assignment commit \
+            '^[[:space:]]*commit = "[0-9a-f]{40}";$'
+          expect_one_assignment x86_64-linux-hash \
+            '^[[:space:]]*x86_64-linux = "sha256-[^"]+";$'
+          expect_one_assignment aarch64-linux-hash \
+            '^[[:space:]]*aarch64-linux = "sha256-[^"]+";$'
+          expect_one_assignment aarch64-darwin-hash \
+            '^[[:space:]]*aarch64-darwin = "sha256-[^"]+";$'
+
+          mapfile -t pending_releases < <(
+            jq -r '.[] | [.tag, .commit] | @tsv' <<< "$CANDIDATES_JSON"
+          )
+
+          if (( ${#pending_releases[@]} == 0 )); then
+            echo "Discovery reported updates but returned no candidates." >&2
+            exit 1
+          fi
+
+          printf 'New Codex releases (oldest first):\n'
+          printf '  %s\n' "${pending_releases[@]%%$'\t'*}"
+
+          git config user.name "ixpkgs"
+          git config user.email "ixpkgs@140.lol"
+
+          declare -A asset_names=(
+            [x86_64-linux]="codex-package-x86_64-unknown-linux-musl.tar.gz"
+            [aarch64-linux]="codex-package-aarch64-unknown-linux-musl.tar.gz"
+            [aarch64-darwin]="codex-package-aarch64-apple-darwin.tar.gz"
+          )
+
+          for release in "${pending_releases[@]}"; do
+            IFS=$'\t' read -r tag commit <<< "$release"
+
+            if [[ ! "$tag" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Unexpected Codex release tag: $tag" >&2
+              exit 1
+            fi
+            if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Invalid upstream commit for $tag: $commit" >&2
+              exit 1
+            fi
+            if git show-ref --verify --quiet "refs/tags/$tag"; then
+              echo "Refusing to replace existing tag: $tag" >&2
+              exit 1
+            fi
+
+            echo "Packaging $tag ($commit)"
+            release_assets=$(
+              gh api \
+                -H "X-GitHub-Api-Version: 2026-03-10" \
+                "/repos/openai/codex/releases/tags/$tag" \
+                --jq '[.assets[] | {name, digest}]'
+            )
+
+            declare -A asset_hashes=()
+            for system in x86_64-linux aarch64-linux aarch64-darwin; do
+              asset_name=${asset_names[$system]}
+              digest=$(
+                jq -r --arg name "$asset_name" '
+                  [.[] | select(.name == $name) | .digest]
+                  | if length == 1 then .[0] else empty end
+                ' <<< "$release_assets"
+              )
+              if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "Missing or invalid digest for $tag asset $asset_name." >&2
+                exit 1
+              fi
+              asset_hashes[$system]=$(
+                nix hash convert \
+                  --hash-algo sha256 \
+                  --to sri \
+                  "${digest#sha256:}"
+              )
+            done
+
+            sed -i -E \
+              -e "s|^([[:space:]]*)tag = \"[^\"]+\";|\1tag = \"$tag\";|" \
+              -e "s|^([[:space:]]*)version = \"[^\"]+\";|\1version = \"$tag\";|" \
+              -e "s|^([[:space:]]*)commit = \"[0-9a-f]{40}\";|\1commit = \"$commit\";|" \
+              -e "s|^([[:space:]]*)x86_64-linux = \"sha256-[^\"]+\";|\1x86_64-linux = \"${asset_hashes[x86_64-linux]}\";|" \
+              -e "s|^([[:space:]]*)aarch64-linux = \"sha256-[^\"]+\";|\1aarch64-linux = \"${asset_hashes[aarch64-linux]}\";|" \
+              -e "s|^([[:space:]]*)aarch64-darwin = \"sha256-[^\"]+\";|\1aarch64-darwin = \"${asset_hashes[aarch64-darwin]}\";|" \
+              -- "$FLAKE_FILE"
+
+            grep -Fq -- "tag = \"$tag\";" "$FLAKE_FILE"
+            grep -Fq -- "version = \"$tag\";" "$FLAKE_FILE"
+            grep -Fq -- "commit = \"$commit\";" "$FLAKE_FILE"
+            grep -Fq -- \
+              "x86_64-linux = \"${asset_hashes[x86_64-linux]}\";" \
+              "$FLAKE_FILE"
+            grep -Fq -- \
+              "aarch64-linux = \"${asset_hashes[aarch64-linux]}\";" \
+              "$FLAKE_FILE"
+            grep -Fq -- \
+              "aarch64-darwin = \"${asset_hashes[aarch64-darwin]}\";" \
+              "$FLAKE_FILE"
+
+            changed_paths=$(git diff --name-only)
+            if [[ "$changed_paths" != "$FLAKE_FILE" ]]; then
+              echo "Unexpected changed paths while packaging $tag:" >&2
+              printf '%s\n' "$changed_paths" >&2
+              exit 1
+            fi
+
+            nix build "$BUILD_TARGET" --no-link
+            nix flake check --all-systems --no-build
+            git diff --check
+            git add -- "$FLAKE_FILE"
+            git diff --cached --check
+            git commit \
+              -m "Package codex $tag" \
+              -m "Upstream commit: $commit"
+            git tag -- "$tag"
+
+            git push --atomic origin \
+              "HEAD:refs/heads/$TARGET_BRANCH" \
+              "refs/tags/$tag"
+          done
