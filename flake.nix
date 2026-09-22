@@ -19,9 +19,9 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
-          tag = "rust-v0.155.1";
-          version = "rust-v0.155.1";
-          commit = "be2951ea34f0d295ed0becf97079f92fa5f6950e";
+          tag = "rust-v0.156.0";
+          version = "rust-v0.156.0";
+          commit = "fe74a774532af67b5a4a3dec03ce9469e17f89af";
           upstreamVersion = lib.removePrefix "rust-v" version;
           useGnuLinux =
             lib.versionAtLeast upstreamVersion "0.54.0"
@@ -32,9 +32,9 @@
             aarch64-darwin = "aarch64-apple-darwin";
           };
           assetHashes = {
-            x86_64-linux = "sha256-pluJXGrBpzYpu+S4ZGQMhhM+lKQ7TWezEDBE4aMG1aI=";
-            aarch64-linux = "sha256-cYV9vJvqNhNBDoppz7RrB8BALW0g/sGIQ9uv/XV2NL0=";
-            aarch64-darwin = "sha256-5uCHF9qeNbcjMu/3U1J/55qa6HYIEDPFxoIKjl9YuUM=";
+            x86_64-linux = "sha256-6LdEsDrbkLKWv2MsiikWfnXqG50pgOSdPfxuhPXbp0k=";
+            aarch64-linux = "sha256-/welhbB74xkiM++ph8wxFkxIlUY29YOAZmSvtEu2uNs=";
+            aarch64-darwin = "sha256-b3va0laT9GShRq1vJNR3rW+//ge2JVb4Ke5dOwT0j4s=";
           };
           target = targets.${system};
           isBundle = lib.versionAtLeast upstreamVersion "0.140.0";
